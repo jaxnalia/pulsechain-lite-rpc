@@ -1,0 +1,18 @@
+# Shell scripts must be LF so they run in Linux containers / Git Bash.
+*.sh text eol=lf
+# Windows launchers need CRLF for cmd.exe.
+*.cmd text eol=crlf
+
+# Vendored C/C++ (and Go) must stay LF. On Windows, core.autocrlf=true would
+# otherwise rewrite them to CRLF on checkout, and the Docker build's C
+# compiler then fails with "invalid digit in octal constant" in system headers
+# (seen with github.com/DataDog/zstd).
+pulselite/vendor/** text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.cc text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf

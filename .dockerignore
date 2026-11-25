@@ -1,0 +1,8 @@
+**/.git
+prysm-pulse
+pulsechain-mainnet
+deploy/data
+deploy/measurements
+go-pulse/build/_workspace
+go-pulse/tests/testdata
+pulselite/bin

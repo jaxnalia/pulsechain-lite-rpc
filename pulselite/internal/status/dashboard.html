@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PulseChain Lite RPC</title>
+<style>
+  :root {
+    --bg: #07060d;
+    --panel: rgba(255, 255, 255, 0.035);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --text: #ece9f5;
+    --muted: #9a94ad;
+    --faint: #6b6580;
+    --pink: #ff2fa8;
+    --purple: #8b3dff;
+    --cyan: #20d1ff;
+    --green: #2ee59d;
+    --amber: #ffb547;
+    --red: #ff5470;
+    --blue: #5ab0ff;
+    --grad: linear-gradient(120deg, var(--pink), var(--purple) 55%, var(--cyan));
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 500px at 10% -10%, rgba(255, 47, 168, 0.16), transparent 60%),
+      radial-gradient(800px 500px at 100% 0%, rgba(32, 209, 255, 0.12), transparent 60%),
+      radial-gradient(700px 600px at 50% 120%, rgba(139, 61, 255, 0.14), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 60px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 26px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 14px; background: var(--grad);
+    display: grid; place-items: center; box-shadow: 0 0 30px rgba(255, 47, 168, 0.35);
+  }
+  .logo svg { width: 26px; height: 26px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: 0.2px; }
+  h1 span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px;
+    font-weight: 600; font-size: 13px; border: 1px solid var(--panel-border); background: var(--panel);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); }
+  .s-ready .dot { background: var(--green); box-shadow: 0 0 12px var(--green); }
+  .s-syncing .dot, .s-starting .dot {
+    width: 12px; height: 12px; background: transparent;
+    border: 2px solid rgba(255, 181, 71, 0.3); border-top-color: var(--amber);
+    animation: spin 0.8s linear infinite;
+  }
+  .s-starting .dot { border-color: rgba(90, 176, 255, 0.3); border-top-color: var(--blue); }
+  .s-degraded .dot, .s-offline .dot { background: var(--red); box-shadow: 0 0 12px var(--red); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid rgba(255, 181, 71, 0.25); border-top-color: var(--amber);
+    animation: spin 0.8s linear infinite;
+  }
+
+  .grid { display: grid; gap: 16px; }
+  .grid > * { min-width: 0; }
+  .table-wrap { overflow-x: auto; }
+  .top { grid-template-columns: 1.15fr 1fr; }
+  @media (max-width: 900px) { .top { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 18px; padding: 20px;
+    backdrop-filter: blur(6px);
+  }
+  .card h2 { margin: 0 0 14px; font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); font-weight: 600; }
+  .status-card { position: relative; overflow: hidden; }
+  .status-card::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--faint);
+  }
+  .status-card.s-ready::before { background: var(--green); }
+  .status-card.s-syncing::before { background: var(--amber); }
+  .status-card.s-starting::before { background: var(--blue); }
+  .status-card.s-degraded::before, .status-card.s-offline::before { background: var(--red); }
+  .big-state { font-size: 26px; font-weight: 700; margin: 2px 0 4px; display: flex; align-items: center; gap: 12px; }
+  .big-spin {
+    display: none; width: 20px; height: 20px; border-radius: 50%;
+    border: 3px solid rgba(255, 181, 71, 0.25); border-top-color: var(--amber);
+    animation: spin 0.8s linear infinite;
+  }
+  .s-syncing .big-spin, .s-starting .big-spin { display: inline-block; }
+  .s-starting .big-spin { border-color: rgba(90, 176, 255, 0.25); border-top-color: var(--blue); }
+  .s-ready .big-state { color: var(--green); }
+  .s-syncing .big-state { color: var(--amber); }
+  .s-starting .big-state { color: var(--blue); }
+  .s-degraded .big-state, .s-offline .big-state { color: var(--red); }
+  .summary { color: var(--muted); margin-bottom: 16px; }
+  .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .checks li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+  .tick {
+    width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700;
+    background: rgba(255, 84, 112, 0.14); color: var(--red);
+  }
+  .tick.ok { background: rgba(46, 229, 157, 0.14); color: var(--green); }
+  .tick.pending { background: rgba(255, 181, 71, 0.12); }
+  .checks .label { font-weight: 600; }
+  .checks .detail { color: var(--muted); font-size: 12.5px; word-break: break-word; }
+
+  .kv { display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; gap: 10px 12px; align-items: center; }
+  .kv .k { color: var(--muted); font-size: 13px; }
+  .kv .v { font-family: var(--mono); font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kv a { color: var(--cyan); text-decoration: none; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 10px; border: 1px solid var(--panel-border);
+    background: rgba(255, 255, 255, 0.05); color: var(--text); padding: 6px 11px; font-size: 12.5px;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.1); }
+  .primary {
+    background: var(--grad); border: 0; font-weight: 600; padding: 10px 16px; font-size: 14px; color: #fff;
+    box-shadow: 0 6px 24px rgba(139, 61, 255, 0.35);
+  }
+  .primary:hover { filter: brightness(1.1); background: var(--grad); }
+  .actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  .note { color: var(--faint); font-size: 12.5px; margin-top: 12px; }
+  .note code, .card code { font-family: var(--mono); color: var(--text); background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 6px; }
+  #mmMsg { font-size: 12.5px; color: var(--muted); }
+
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); margin-top: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 16px; padding: 15px 16px; }
+  .tile .t { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .tile .n { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .tile .d { color: var(--faint); font-size: 12px; margin-top: 2px; }
+  .bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,0.07); margin-top: 9px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--grad); border-radius: 99px; transition: width 0.6s; }
+
+  .lower { grid-template-columns: 1.4fr 1fr; margin-top: 16px; }
+  @media (max-width: 900px) { .lower { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
+  th { color: var(--faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
+  td.mono { font-family: var(--mono); color: var(--muted); }
+  .gasbar { width: 70px; height: 5px; border-radius: 9px; background: rgba(255,255,255,0.08); display: inline-block; vertical-align: middle; margin-right: 6px; overflow: hidden; }
+  .gasbar > i { display: block; height: 100%; background: var(--grad); }
+  .methods { display: flex; flex-wrap: wrap; gap: 6px; }
+  .methods span { font-family: var(--mono); font-size: 12px; padding: 3px 8px; border-radius: 8px; background: rgba(32, 209, 255, 0.08); color: #bfefff; }
+  .limits { margin: 14px 0 0; padding-left: 18px; color: var(--muted); }
+  .limits li { margin: 4px 0; }
+  pre {
+    font-family: var(--mono); font-size: 12.5px; background: rgba(0,0,0,0.35); border: 1px solid var(--panel-border);
+    padding: 12px 14px; border-radius: 12px; overflow-x: auto; margin: 10px 0 0; color: #d9d4ea;
+  }
+  footer { margin-top: 26px; color: var(--faint); font-size: 12.5px; display: flex; gap: 18px; flex-wrap: wrap; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="2 12 6 12 9 4 15 20 18 12 22 12"></polyline>
+        </svg>
+      </div>
+      <div>
+        <h1>PulseChain <span>Lite RPC</span></h1>
+        <div class="sub">Verified state from PulseChain peers &middot; no full node, no third-party RPC</div>
+      </div>
+    </div>
+    <div id="pill" class="pill s-starting"><span class="dot"></span><span id="pillText">Connecting&hellip;</span></div>
+  </header>
+
+  <div class="grid top">
+    <section id="statusCard" class="card status-card s-starting">
+      <h2>Status</h2>
+      <div class="big-state"><span class="big-spin"></span><span id="bigState">Connecting&hellip;</span></div>
+      <div class="summary" id="summary">Loading node status.</div>
+      <ul class="checks" id="checks"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Connect your wallet</h2>
+      <div class="kv">
+        <div class="k">RPC URL</div><div class="v" id="rpcUrl">&ndash;</div><button data-copy="rpcUrl">Copy</button>
+        <div class="k">Chain ID</div><div class="v">369 <span style="color:var(--faint)">(0x171)</span></div><button data-copy-text="369">Copy</button>
+        <div class="k">Network</div><div class="v">PulseChain</div><span></span>
+        <div class="k">Currency</div><div class="v">PLS</div><span></span>
+        <div class="k">Explorer</div><div class="v"><a href="https://scan.pulsechain.com" target="_blank" rel="noopener">scan.pulsechain.com</a></div><button data-copy-text="https://scan.pulsechain.com">Copy</button>
+      </div>
+      <div class="actions">
+        <button class="primary" id="addMM">Add to MetaMask</button>
+        <span id="mmMsg"></span>
+      </div>
+      <div class="note" id="hostNote"></div>
+    </section>
+  </div>
+
+  <div class="grid tiles">
+    <div class="tile"><div class="t">Head block</div><div class="n" id="tHead">&ndash;</div><div class="d" id="tHeadAge">&nbsp;</div></div>
+    <div class="tile"><div class="t">Network head</div><div class="n" id="tNet">&ndash;</div><div class="d" id="tLag">&nbsp;</div></div>
+    <div class="tile"><div class="t">Gas price</div><div class="n" id="tGas">&ndash;</div><div class="d" id="tBase">&nbsp;</div></div>
+    <div class="tile"><div class="t">Execution peers</div><div class="n" id="tPeers">&ndash;</div><div class="d" id="tSnap">&nbsp;</div></div>
+    <div class="tile"><div class="t">Consensus</div><div class="n" id="tSlot">&ndash;</div><div class="d" id="tCl">&nbsp;</div></div>
+    <div class="tile"><div class="t">State read</div><div class="n" id="tProbe">&ndash;</div><div class="d" id="tProbeD">&nbsp;</div></div>
+    <div class="tile"><div class="t">RPC requests</div><div class="n" id="tReq">&ndash;</div><div class="d" id="tReqD">&nbsp;</div></div>
+    <div class="tile"><div class="t">Proofs verified</div><div class="n" id="tProofs">&ndash;</div><div class="d" id="tProofsD">&nbsp;</div></div>
+    <div class="tile"><div class="t">State cache</div><div class="n" id="tCache">&ndash;</div><div class="bar"><i id="bCache"></i></div><div class="d" id="tCacheD">&nbsp;</div></div>
+    <div class="tile"><div class="t">Disk used</div><div class="n" id="tDisk">&ndash;</div><div class="bar"><i id="bDisk"></i></div><div class="d" id="tDiskD">&nbsp;</div></div>
+    <div class="tile"><div class="t">Uptime</div><div class="n" id="tUp">&ndash;</div><div class="d" id="tVer">&nbsp;</div></div>
+    <div class="tile"><div class="t">Finalized</div><div class="n" id="tFin">&ndash;</div><div class="d" id="tFinD">&nbsp;</div></div>
+  </div>
+
+  <div class="grid lower">
+    <section class="card">
+      <h2>Recent blocks</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Block</th><th>Age</th><th>Txs</th><th>Gas used</th><th>Base fee</th><th>Hash</th></tr></thead>
+          <tbody id="blocks"><tr><td colspan="6" style="color:var(--faint)">Waiting for blocks&hellip;</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>What this RPC serves</h2>
+      <div class="methods">
+        <span>eth_chainId</span><span>eth_blockNumber</span><span>eth_getBalance</span><span>eth_getTransactionCount</span>
+        <span>eth_getCode</span><span>eth_getStorageAt</span><span>eth_call</span><span>eth_estimateGas</span>
+        <span>eth_sendRawTransaction</span><span>eth_getTransactionReceipt</span><span>eth_getTransactionByHash</span>
+        <span>eth_getBlockByNumber</span><span>eth_getBlockByHash</span><span>eth_getBlockReceipts</span><span>eth_getLogs</span>
+        <span>eth_gasPrice</span><span>eth_maxPriorityFeePerGas</span><span>eth_feeHistory</span><span>eth_syncing</span>
+        <span>net_version</span><span>web3_clientVersion</span>
+      </div>
+      <ul class="limits">
+        <li>State (balances, calls) for the latest <b>~120 blocks</b> (&asymp;20 min).</li>
+        <li>Blocks, receipts and logs for the latest <b id="logsWin">~1,000 blocks</b>.</li>
+        <li>No archive history, traces or <code>debug_*</code>. Use an explorer for old data.</li>
+        <li>Transactions are broadcast straight to PulseChain peers; there is no local mempool.</li>
+      </ul>
+      <pre id="curl"></pre>
+      <div class="actions" style="margin-top:10px"><button data-copy="curl">Copy test command</button></div>
+    </section>
+  </div>
+
+  <footer>
+    <span id="footVer">pulselite</span>
+    <a href="/api/status" target="_blank">/api/status</a>
+    <a href="/ready" target="_blank">/ready</a>
+    <span>Updates every 3 s</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const rpcUrl = location.origin;
+  $("rpcUrl").textContent = rpcUrl;
+  $("curl").textContent =
+    `curl -s -X POST ${rpcUrl} -H "Content-Type: application/json" \\\n` +
+    `  -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'`;
+
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+  $("hostNote").innerHTML = local
+    ? "This address only works on <b>this computer</b>. To use it from a phone or another PC, set <code>RPC_BIND=0.0.0.0</code> in <code>deploy/.env</code> and use this machine's LAN IP."
+    : "Reachable on your network at this address. Do not expose it to the public internet without a firewall or authentication.";
+
+  const fmt = (n) => (n === undefined || n === null) ? "–" : Number(n).toLocaleString();
+  const bytes = (b) => {
+    if (!b) return "0 B";
+    const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+    while (b >= 1000 && i < u.length - 1) { b /= 1000; i++; }
+    return (b >= 100 ? b.toFixed(0) : b >= 10 ? b.toFixed(1) : b.toFixed(2)) + " " + u[i];
+  };
+  const dur = (s) => {
+    s = Math.max(0, Math.round(s));
+    if (s < 60) return s + "s";
+    if (s < 3600) return Math.floor(s / 60) + "m " + (s % 60) + "s";
+    if (s < 86400) return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+    return Math.floor(s / 86400) + "d " + Math.floor((s % 86400) / 3600) + "h";
+  };
+  const gwei = (g) => {
+    if (!g) return "0";
+    if (g >= 1e6) return (g / 1e6).toFixed(2) + "M";
+    if (g >= 1e3) return (g / 1e3).toFixed(1) + "k";
+    return g.toFixed(g >= 10 ? 0 : 2);
+  };
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const titles = { ready: "Ready", syncing: "Syncing", starting: "Starting", degraded: "Not working", offline: "Offline" };
+  const checkState = (c) => c.state || (c.ok ? "ok" : "fail");
+  const checkIcon = (state) =>
+    state === "ok" ? '<span class="tick ok" title="Working">✓</span>'
+    : state === "fail" ? '<span class="tick" title="Not working">✕</span>'
+    : '<span class="tick pending" title="In progress"><span class="spinner"></span></span>';
+
+  function setState(state, summary) {
+    for (const el of [$("pill"), $("statusCard")]) {
+      el.className = el.className.replace(/\bs-\w+/g, "").trim() + " s-" + state;
+    }
+    $("pillText").textContent = titles[state] || state;
+    $("bigState").textContent = titles[state] || state;
+    $("summary").textContent = summary;
+  }
+
+  function render(s) {
+    setState(s.state, s.summary);
+    $("checks").innerHTML = s.checks.map((c) =>
+      `<li>${checkIcon(checkState(c))}` +
+      `<div><div class="label">${esc(c.label)}</div><div class="detail">${esc(c.detail)}</div></div></li>`).join("");
+
+    const h = s.head;
+    $("tHead").textContent = h ? fmt(h.number) : "–";
+    $("tHeadAge").textContent = h ? dur(h.ageSec) + " ago" : "waiting";
+    $("tNet").textContent = s.networkHead ? fmt(s.networkHead) : "–";
+    const lag = h ? s.networkHead - h.number : 0;
+    $("tLag").textContent = h ? (lag > 0 ? lag + " blocks behind" : "in sync") : " ";
+    $("tGas").textContent = s.gas.gasPriceGwei ? gwei(s.gas.gasPriceGwei) : "–";
+    $("tBase").textContent = s.gas.baseFeeGwei ? "gwei · base fee " + gwei(s.gas.baseFeeGwei) : " ";
+    if (s.p2p) {
+      $("tPeers").textContent = s.p2p.eth;
+      $("tSnap").textContent = s.p2p.snap + " serving state";
+    } else {
+      $("tPeers").textContent = "RPC";
+      $("tSnap").textContent = "opt-in upstream mode";
+    }
+    const c = s.consensus;
+    $("tSlot").textContent = c.reachable ? fmt(c.headSlot) : "offline";
+    $("tCl").textContent = c.reachable
+      ? (c.isSyncing ? `syncing · ${fmt(c.syncDistance)} slots behind` : `synced · ${c.peers} peers`)
+      : "beacon node unreachable";
+    const p = s.stateProbe;
+    const stateCheck = s.checks.find((c) => c.id === "state");
+    const reading = stateCheck && checkState(stateCheck) === "pending";
+    $("tProbe").textContent = p.at && p.ok ? Math.round(p.latencyMs) + " ms" : reading ? "reading…" : p.at ? "failed" : "–";
+    $("tProbeD").textContent = p.at ? `block #${fmt(p.block)}` : "first read in progress";
+    $("tReq").textContent = fmt(s.rpc.requests);
+    $("tReqD").textContent = s.rpc.requests ? `avg ${Math.round(s.rpc.avgLatencyMs)} ms` : "no requests yet";
+    $("tProofs").textContent = fmt(s.verified.proofs);
+    $("tProofsD").textContent = `${fmt(s.verified.proofsFailed)} rejected · ${Math.round(s.verified.cacheHitRatio * 100)}% cache hits`;
+    $("tCache").textContent = bytes(s.cache.bytes);
+    $("bCache").style.width = s.cache.cap ? Math.min(100, s.cache.bytes / s.cache.cap * 100) + "%" : "0";
+    $("tCacheD").textContent = "cap " + bytes(s.cache.cap);
+    $("tDisk").textContent = bytes(s.disk.total);
+    $("bDisk").style.width = s.disk.limit ? Math.min(100, s.disk.total / s.disk.limit * 100) + "%" : "0";
+    $("tDiskD").textContent = `consensus ${bytes(s.disk.consensus)} · lite ${bytes(s.disk.execution)}`;
+    $("tUp").textContent = dur(s.uptimeSec);
+    $("tVer").textContent = `v${s.version} · ${s.mode} mode`;
+    $("tFin").textContent = s.finalized ? fmt(s.finalized) : "–";
+    $("tFinD").textContent = h && s.finalized ? `${fmt(h.number - s.finalized)} blocks below head` : " ";
+    if (h && s.window.logsFrom) $("logsWin").textContent = `~${fmt(h.number - s.window.logsFrom + 1)} blocks`;
+    $("footVer").textContent = `pulselite v${s.version} · chain ${s.chainId} · validation ${s.validation ? "on" : "off"}`;
+
+    $("blocks").innerHTML = s.recentBlocks.length ? s.recentBlocks.map((b) => {
+      const pct = b.gasLimit ? (b.gasUsed / b.gasLimit * 100) : 0;
+      return `<tr><td>${fmt(b.number)}</td><td>${dur(b.ageSec)}</td><td>${b.txs < 0 ? "…" : b.txs}</td>` +
+        `<td><span class="gasbar"><i style="width:${pct}%"></i></span>${pct.toFixed(0)}%</td>` +
+        `<td>${gwei(b.baseFeeGwei)}</td><td class="mono">${b.hash.slice(0, 10)}…</td></tr>`;
+    }).join("") : `<tr><td colspan="6" style="color:var(--faint)">Waiting for blocks…</td></tr>`;
+  }
+
+  async function tick() {
+    try {
+      const r = await fetch("/api/status", { cache: "no-store" });
+      render(await r.json());
+    } catch (e) {
+      setState("offline", "Cannot reach the node. Is the container running?");
+    }
+  }
+  tick();
+  setInterval(tick, 3000);
+
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-copy],button[data-copy-text]");
+    if (!b) return;
+    const text = b.dataset.copyText || $(b.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); } catch { return; }
+    const old = b.textContent; b.textContent = "Copied"; setTimeout(() => (b.textContent = old), 1200);
+  });
+
+  $("addMM").addEventListener("click", async () => {
+    const msg = $("mmMsg");
+    if (!window.ethereum) { msg.textContent = "No browser wallet found. Add the network manually with the values above."; return; }
+    try {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: "0x171",
+          chainName: "PulseChain (Lite RPC)",
+          nativeCurrency: { name: "Pulse", symbol: "PLS", decimals: 18 },
+          rpcUrls: [rpcUrl],
+          blockExplorerUrls: ["https://scan.pulsechain.com"],
+        }],
+      });
+      msg.textContent = "Network added. Select it in your wallet.";
+    } catch (err) {
+      msg.textContent = err && err.message ? err.message : "Request rejected.";
+    }
+  });
+})();
+</script>
+</body>
+</html>

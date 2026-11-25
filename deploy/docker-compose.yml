@@ -1,0 +1,173 @@
+# PulseChain Lite RPC: an official, unmodified PulseChain consensus client
+# (lighthouse-pulse by default, prysm-pulse optional; both checkpoint-synced)
+# + the pulselite proof-based execution layer, which gets all state and
+# history from the PulseChain devp2p network. Start with:
+#   ./scripts/setup.sh  (or setup.ps1)
+# then open http://127.0.0.1:8545 in a browser for the status dashboard.
+#
+# The consensus client is selected with COMPOSE_PROFILES (set by the setup
+# scripts): "lighthouse" (default) or "prysm". Both answer as host
+# "consensus" on the compose network and store data in
+# ${DATA_DIR}/consensus/<client>.
+#
+# DATA_DIR is a host path (default ./data) or the named volume
+# "pulselite-data" (recommended on Docker Desktop for Windows/macOS, where
+# bind mounts are slow for databases).
+name: pulselite
+
+volumes:
+  pulselite-data:
+
+services:
+  execution:
+    build:
+      context: ../pulselite
+    image: pulselite:local
+    restart: unless-stopped
+    stop_grace_period: 1m
+    volumes:
+      - ${DATA_DIR:-./data}:/blockchain
+    environment:
+      PULSELITE_MODE: ${PULSELITE_MODE:-rpc}
+      PULSELITE_EXPERIMENTAL_VALIDATOR: ${PULSELITE_EXPERIMENTAL_VALIDATOR:-false}
+      PULSELITE_DATADIR: /blockchain/execution
+      PULSELITE_JWT: /blockchain/jwt.hex
+      PULSELITE_BEACON: http://consensus:3500
+      PULSELITE_UPSTREAM: ${PULSELITE_UPSTREAM:-}
+      PULSELITE_P2P_PORT: ${P2P_PORT:-30303}
+      PULSELITE_P2P_MAXPEERS: ${P2P_MAXPEERS:-50}
+      # Empty = per-mode defaults (rpc: 1GiB / 3GiB / 8GB; validator/full: 4GiB / 10GiB / 25GB).
+      PULSELITE_CACHE_MAX_BYTES: ${CACHE_MAX_BYTES:-}
+      PULSELITE_LOGS_WINDOW: ${LOGS_WINDOW:-1024}
+      PULSELITE_BLOCKS_WINDOW: ${BLOCKS_WINDOW:-128}
+      PULSELITE_DISK_LIMIT: ${EXEC_DISK_LIMIT:-}
+      PULSELITE_DISK_TOTAL_LIMIT: ${TOTAL_DISK_LIMIT:-}
+      PULSELITE_DISK_WATCH: /blockchain/consensus
+      PULSELITE_LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      # RPC + dashboard. RPC_BIND=0.0.0.0 makes it reachable from your LAN.
+      - "${RPC_BIND:-127.0.0.1}:${RPC_PORT:-8545}:8545"
+      - "127.0.0.1:${METRICS_PORT:-6060}:6060"
+      - "${P2P_PORT:-30303}:${P2P_PORT:-30303}"
+      - "${P2P_PORT:-30303}:${P2P_PORT:-30303}/udp"
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # Default consensus client: lighthouse-pulse.
+  lighthouse:
+    image: registry.gitlab.com/pulsechaincom/lighthouse-pulse:${LIGHTHOUSE_PULSE_VERSION:-v2.5.1}
+    profiles: ["lighthouse"]
+    restart: unless-stopped
+    stop_grace_period: 3m
+    depends_on:
+      execution:
+        condition: service_healthy # it creates the shared JWT secret
+    networks:
+      default:
+        aliases: [consensus]
+    volumes:
+      - ${DATA_DIR:-./data}:/blockchain
+      - ./consensus/lighthouse-run.sh:/opt/pulselite/lighthouse-run.sh:ro
+    ports:
+      - "13000:13000"
+      - "13000:13000/udp"
+      - "127.0.0.1:${BEACON_API_PORT:-3500}:3500"
+    # lighthouse-run.sh starts "lighthouse bn" and keeps its database bounded
+    # in rpc mode (fresh checkpoint sync on start / when over budget).
+    entrypoint: ["/bin/sh", "/opt/pulselite/lighthouse-run.sh"]
+    environment:
+      LH_FRESH_START: ${LH_FRESH_START:-true}
+      LH_DB_BUDGET_MB: ${LH_DB_BUDGET_MB:-2000}
+      LH_CHECK_SECONDS: ${LH_CHECK_SECONDS:-300}
+      CL_TARGET_PEERS: ${CL_TARGET_PEERS:-50}
+      FEE_RECIPIENT: ${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+      # rpc mode: no validators, so no deposit-contract history is needed.
+      LIGHTHOUSE_EXTRA_FLAGS: ${LIGHTHOUSE_EXTRA_FLAGS---disable-deposit-contract-sync}
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # Alternative consensus client: prysm-pulse (COMPOSE_PROFILES=prysm).
+  prysm:
+    image: registry.gitlab.com/pulsechaincom/prysm-pulse/beacon-chain:${PRYSM_PULSE_VERSION:-v2.3.0}
+    profiles: ["prysm"]
+    restart: unless-stopped
+    stop_grace_period: 3m
+    depends_on:
+      execution:
+        condition: service_healthy # it creates the shared JWT secret
+    networks:
+      default:
+        aliases: [consensus]
+    volumes:
+      - ${DATA_DIR:-./data}:/blockchain
+    ports:
+      - "13000:13000"
+      - "12000:12000/udp"
+      - "127.0.0.1:${BEACON_API_PORT:-3500}:3500"
+    command:
+      - --pulsechain
+      - --datadir=/blockchain/consensus/prysm
+      - --jwt-secret=/blockchain/jwt.hex
+      - --execution-endpoint=http://execution:8551
+      - --checkpoint-sync-url=https://checkpoint.pulsechain.com
+      - --genesis-beacon-api-url=https://checkpoint.pulsechain.com
+      - --grpc-gateway-host=0.0.0.0
+      - --grpc-gateway-port=3500
+      - --rpc-host=0.0.0.0
+      - --slots-per-archive-point=${SLOTS_PER_ARCHIVE_POINT:-8192}
+      - --engine-endpoint-timeout-seconds=${ENGINE_TIMEOUT_SECONDS:-12}
+      - --verbosity=${PRYSM_VERBOSITY:-info}
+    logging:
+      options:
+        max-size: 50m
+        max-file: "3"
+
+  # Optional single endpoint: JSON-RPC at /, Beacon API at /eth/v1|v2/...
+  # Enable by adding "proxy" to COMPOSE_PROFILES (setup -Proxy / --proxy).
+  proxy:
+    image: nginx:1.27-alpine
+    profiles: ["proxy"]
+    restart: unless-stopped
+    depends_on:
+      - execution
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:${PROXY_PORT:-8080}:8080"
+
+  # EXPERIMENTAL validator clients (keys imported into ${DATA_DIR}/validator).
+  # Need PULSELITE_MODE=validator|full with PULSELITE_EXPERIMENTAL_VALIDATOR=true
+  # and LIGHTHOUSE_EXTRA_FLAGS= (empty); blocks are not yet validated within
+  # the slot over p2p, so expect missed attestations.
+  # Add "validator" (lighthouse) or "validator-prysm" to COMPOSE_PROFILES.
+  validator:
+    image: registry.gitlab.com/pulsechaincom/lighthouse-pulse:${LIGHTHOUSE_PULSE_VERSION:-v2.5.1}
+    profiles: ["validator"]
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR:-./data}:/blockchain
+    command:
+      - lighthouse
+      - vc
+      - --network=pulsechain
+      - --datadir=/blockchain/validator/lighthouse
+      - --beacon-nodes=http://consensus:3500
+      - --suggested-fee-recipient=${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+
+  validator-prysm:
+    image: registry.gitlab.com/pulsechaincom/prysm-pulse/validator:${PRYSM_PULSE_VERSION:-v2.3.0}
+    profiles: ["validator-prysm"]
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR:-./data}:/blockchain
+    command:
+      - --pulsechain
+      - --datadir=/blockchain/validator/prysm
+      - --wallet-dir=/blockchain/validator/prysm/wallet
+      - --wallet-password-file=/blockchain/validator/password.txt
+      - --beacon-rpc-provider=consensus:4000
+      - --suggested-fee-recipient=${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}

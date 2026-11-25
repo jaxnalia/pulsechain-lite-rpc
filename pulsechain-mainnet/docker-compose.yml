@@ -1,0 +1,52 @@
+services:
+  execution:
+    image: registry.gitlab.com/pulsechaincom/go-pulse:${GO_PULSE_VERSION}
+    restart: unless-stopped
+    stop_grace_period: 3m
+    volumes:
+      - ./data:/blockchain
+    ports:
+      - "127.0.0.1:8545:8545"
+      - "127.0.0.1:8546:8546"
+      - "30303:30303"
+      - "30303:30303/udp"
+    command:
+      - --pulsechain
+      - --datadir=/blockchain/execution
+      - --authrpc.jwtsecret=/blockchain/jwt.hex
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.vhosts=*
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.api=eth,net,web3
+      - --http.corsdomain=*
+      - --http.vhosts=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.api=eth,net,web3
+      - --ws.origins=*
+    logging:
+      options:
+        max-size: 50m
+
+  consensus:
+    image: registry.gitlab.com/pulsechaincom/prysm-pulse/beacon-chain:${PRYSM_PULSE_VERSION}
+    restart: unless-stopped
+    stop_grace_period: 3m
+    depends_on:
+      - execution
+    volumes:
+      - ./data:/blockchain
+    ports:
+      - "13000:13000"
+      - "12000:12000/udp"
+    command:
+      - --pulsechain
+      - --datadir=/blockchain/consensus
+      - --jwt-secret=/blockchain/jwt.hex
+      - --execution-endpoint=http://execution:8551
+      - --checkpoint-sync-url=https://checkpoint.pulsechain.com
+      - --genesis-beacon-api-url=https://checkpoint.pulsechain.com
+    logging:
+      options:
+        max-size: 50m
